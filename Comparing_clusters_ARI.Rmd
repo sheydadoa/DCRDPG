@@ -1,0 +1,448 @@
+---
+title: "Comparing_clusters_ARI"
+output: html_document
+date: "2023-10-16"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#load packages
+library(mclust)
+library(dplyr)
+library(R.matlab)
+```
+
+```{r}
+
+# --- Comments ---
+
+# In this file, the code below has their_data[[i]][,1], whereas in the Dec. file the index is their_data[[i]][,2]
+# THEIRS
+# data_2 <- matrix(0,4,dim(their_data[[1]])[1])
+# 
+# for (i in 1:4){
+#   data_2[i,] <- their_data[[i]][,1] ##### CHANGED THIS to 2 in the other script!
+# }
+```
+
+```{r}
+set.seed(123)
+#                                     ---------- FUNCTION ----------
+
+# Plots the means of each cluster ( k clusters)
+
+# Function input: 
+# --- k: the number of clusters
+# --- input_data: the data being used 
+#     (if the data comes from kml, then it is a S4 format and we get the cluster labels from the data in the function itself. In this case, use_kml=TRUE)
+#     (if the data comes from the consensus clustering, then it is just a vector of labels (clusters) for each vertex and so use_kml=FALSE)
+
+
+# FUnction output:
+# --- index_list: A list of length k, where each element in the list contains the indices of the vertices that are contained in that cluster (clusters 1 to k)
+# --- save_n: A matrix of length k times 36 (where 36 is the length of the x-axis of our plots). Each row of this matrix contains the mean plot (y-values) for each of the k clutsers.
+
+
+cluster_means <- function(k,input_data,use_kml=TRUE){
+  
+  save_n = matrix(0,k,dim(c)[2])
+  if (use_kml==TRUE){
+    Khat_k = kml::getClusters(input_data, k)}
+  else{
+    Khat_k <- toupper(sapply(input_data, function(i) letters[i]))
+  }
+  
+  # String of clusters - A, B, C, .... (k of them)
+  cluster_string <- paste(letters[1:k])
+  cluster_string <- toupper(cluster_string)
+  
+  
+  # Plot parameters
+  if (k <= 9) { 
+    par(mfrow = c(3, 3))
+  }
+  else {
+    par(mfrow=c(4,4))
+  }
+  
+  layout_matrix <- matrix(c(1, 2, 3, 4, 5, 6), ncol = 3)  # Define position matrix
+  layout(layout_matrix,widths = c(3,3,3),
+         heights = c(1,1))
+  
+  index_list <- list()
+
+  # Plot each cluster
+  
+  for (ii in 1:k){
+    print(paste('ii',ii))
+    print(cluster_string[ii])
+    # Cluster k
+    # Find index of vertices that are cluster 'k'
+    index_k <- which(Khat_k==cluster_string[ii])
+    index_list[[ii]] <- index_k
+    cluster_k_data <- cc[index_k,]
+    ###### DELETE BELOW ###
+    if((ii==k-1)|(ii==k)){print(paste("inddd",index_k))}
+    ### DELETE ABOVE ###
+    
+    # 
+    if(is.null(dim(cluster_k_data))){
+      plot(cluster_k_data,lwd=1.5,type="l",ylim=c(0,max(c)),xlim=c(1,dim(c)[2]),main=paste('Cluster',cluster_string[ii],'(MEAN):', length(index_k), 'vertices'),col='red')
+      save_n[ii,] = cluster_k_data
+
+    }
+    
+    else {
+      cluster_y <- colMeans(cluster_k_data)
+      plot(cluster_y,lwd=1.5,type="l",ylim=c(0,max(c)),xlim=c(1,dim(c)[2]),main=paste('Cluster',cluster_string[ii],'(MEAN):', length(index_k), 'vertices'),col='red')
+      save_n[ii,] = cluster_y
+      print("dim")
+      print(dim(cluster_k_data))
+# temporary_thing <- cluster_means(k=16,data_2,use_kml=FALSE)
+    }
+
+  }
+  
+ return(list(index_list,save_n))
+}
+
+```
+
+
+```{r}
+
+# Compare adjusted rand index of each of our clusterings with each of Jeff's. Store the values in a nxm matrix, 
+# where n is the number of clusters THEY have and m is the number of clusters WE have.
+
+
+# Load the data frames for OUR and THEIR clusterings.
+
+# OUR DATA
+#cc <- readRDS(file="cc_Dec0922")
+#cc <- load(file="c_Dec0922_1_peaks_only_norm_i_norm_1.Rdata")
+load(file="c_Nov2122_1_peaks_only_norm_i_norm_1.Rdata")
+# THEIR DATA
+their_data = readMat("Nov2122Clustering_consensus.mat") 
+#their_data = readMat("Dec0922Clustering_consensus.mat")
+# we only need the first column of each list: The first column corresponds to the clustering values, whereas the second column corresponds to the neurons.
+# Preparing the data
+
+# OURS
+#']
+cc <- c_Nov2122_1_peaks_only_norm_i_norm_1
+#c <- c_Dec0922_1_peaks_only_norm_i_norm_1.Rdata
+#c <- c_Nov2122_1_peaks_only
+### ADD A SEED !!! ###
+
+# RUN CLUSTERS 5 to 11 (so 7 clusters)
+indices_matrx <- c(1:dim(cc)[1])
+matrix_with_index <- cbind(indices_matrx,cc)
+df.cld <- kml::cld(as.data.frame(matrix_with_index), timeInData = 2:ncol(matrix_with_index), maxNA = 2)
+kml::kml(df.cld, nbClusters=5:11, nbRedrawing = 5)
+
+# Cluster matrix
+fdc_clusters <- matrix(0,7,dim(cc)[1])
+
+for (i in 1:7){
+  # ith row of the matrix is the ith clustering - clusters go from 5 to 11
+  fdc_clusters[i,] = kml::getClusters(df.cld, i+4)
+}
+
+# save file
+save(fdc_clusters,file="fdc_clusters.Rdata")
+
+
+data_1 <- fdc_clusters
+
+
+# THEIRS
+data_2 <- matrix(0,4,dim(their_data[[1]])[1])
+
+for (i in 1:4){
+  data_2[i,] <- their_data[[i]][,1] ##### CHANGED THIS to 2 in the other script!
+}
+
+
+# Defining n and m
+n = 7 # Nr. of clusters WE have (5-11 clusters - 7 clusterings in total)
+m = 4 # Nr. of clusters THEY have (16 clusters - 4 iterations)
+
+# Creating the matrix of ARI values
+
+ARI_mat = matrix(0,n,m)
+
+for (i in 1:n){
+  for (j in 1:m){
+    ARI_mat[i,j] = adjustedRandIndex(data_1[i,],data_2[j,])
+  }
+}
+#
+ARI_mat
+# HEATMAP
+heatmap(ARI_mat)
+
+```
+
+```{r}
+
+#######  PERMUTATION TEST ####### (for all clusterings 5-11 vs 16 (scroll down to the end for the 16 vs 16))
+
+
+num_permutations <- 1000
+
+# Perform permutation test for n and m clusterings
+for (i in 1:n) {
+  for (j in 1:m) {
+    observed_ari <- adjustedRandIndex(data_1[i,],data_2[j,])
+    
+    # Permutation test
+    permuted_ari <- replicate(num_permutations, {
+      shuffled_clustering2 <- sample(data_2[j,]) # Randomly shuffle clustering2
+      adjustedRandIndex(data_1[i,], shuffled_clustering2) # Compute ARI with shuffled clustering2
+    })
+    
+    # Calculate p-value
+    p_value <- mean(permuted_ari >= observed_ari)
+    
+    # Print results for the current pair
+    cat("Pair", i, "(n) and Pair", j, "(m) - Observed ARI:", observed_ari, " - Permutation Test p-value:", p_value, "\n")
+  }
+}
+
+# 
+# 
+# # Interpretation
+# if (p_value < 0.05) {
+#   cat("Reject the null hypothesis: The two clusterings are significantly different.\n")
+# } else {
+#   cat("Fail to reject the null hypothesis: The two clusterings are similar.\n")
+# }
+
+```
+
+
+```{r}
+# COMPARING BOTH 16 - CLUSTERS 
+
+# ours 
+
+library(dplyr)
+set.seed(123)
+
+
+indices_matrx <- c(1:dim(cc)[1])
+matrix_with_index <- cbind(indices_matrx,cc)
+df.cld <- kml::cld(as.data.frame(matrix_with_index), timeInData = 2:ncol(matrix_with_index), maxNA = 2)
+kml::kml(df.cld, nbClusters=16, nbRedrawing = 5)
+
+our_16 = kml::getClusters(df.cld, 16)
+
+#cluster_means(k=16,df.cld)
+
+```
+```{r}
+
+# COMPARE ARI for the two methods for 16 clusters and do a permutation test.
+
+
+num_permutations <- 1000
+
+# Perform permutation test for n and m clusterings
+  for (j in 1:m) {
+    observed_ari <- adjustedRandIndex(our_16,data_2[j,])
+    
+    # Permutation test
+    permuted_ari <- replicate(num_permutations, {
+      shuffled_clustering2 <- sample(data_2[j,]) # Randomly shuffle clustering2
+      adjustedRandIndex(our_16, shuffled_clustering2) # Compute ARI with shuffled clustering2
+    })
+    
+    # Calculate p-value
+    p_value <- mean(permuted_ari >= observed_ari)
+    
+    # Print results for the current pair
+    cat("Pair", i, "(n) and Pair", j, "(m) - Observed ARI:", observed_ari, " - Permutation Test p-value:", p_value, "\n")
+  }
+
+
+
+```
+
+
+```{r}
+# Find which of the 4 iterations of THEIR data has a highest ARI with OUR clustering (16)
+temp_max <- 0
+temp_ind <- 1
+
+for (i in 1:4){
+  print(paste("Iteration number",i))
+  print(paste("ARI value = ",adjustedRandIndex(our_16,data_2[i,])))
+  if (adjustedRandIndex(our_16,data_2[i,]) > temp_max){
+    temp_max <- adjustedRandIndex(our_16,data_2[i,])
+    temp_ind <- i
+  }
+}
+
+print(paste("The greatest ARI occurs at iteration nr",temp_ind))
+
+
+
+# THE THIRD ONE has the highest.
+```
+
+```{r}
+
+library('wavethresh')
+library('iGraphMatch')
+library('clue')
+
+# Below we solve a linear assignment problem, to pair clusters that are 'closest' to each other (each pair containing one cluster from the fdc clustering and one from the consensus clustering). 'Similarity' is measured by the l2-norm between the corresponding functions of the mean time series we are working with above.
+
+# We create a cost matrix, where each entry a_ij of the matrix corresponds to the l-2 norm between cluster i (fdc method) and cluster j (consensus method). We then use the function solve_LSAP to solve the linear assignment problem.
+
+################# THE DATA ###########################
+
+# 16 x 36 (dimension of matrices)
+
+fdc_matrix_temp <- cluster_means(k=16,df.cld)
+fdc_matrix <- fdc_matrix_temp[[2]]
+consensus_clustering_matrix_temp <- cluster_means(k=16,data_2[3,],use_kml=FALSE)
+consensus_clustering_matrix <- consensus_clustering_matrix_temp[[2]]
+
+
+#################################### COST MATRIX ################
+
+cost_matrix <- matrix(0,16,16)
+
+
+for (i in 1:16){
+  for (j in 1:16){
+    # take the l2 difference of the vectors.
+    cost_matrix[i,j] <- l2norm(fdc_matrix[i,],consensus_clustering_matrix[j,])
+  }
+}
+
+#################################### SOLVING THE LINEAR ASSIGNMENT PROBLEM ###########
+
+linear_ass_prob <- solve_LSAP(cost_matrix, maximum = FALSE)
+
+
+```
+
+```{r}
+
+# USE THE LINEAR ASSIGNMENT PROBLEM TO PLOT OUR CLUSTERS NEXT TO THE CLOSEST CLUSTER FROM THEIR METHOD
+
+  # String of clusters - A, B, C, .... (k of them)
+  cluster_string <- paste(letters[1:16])
+  cluster_string <- toupper(cluster_string)
+  
+  par(mfrow=c(16,2))
+
+  
+  layout_matrix <- matrix(c(1, 2, 3, 4, 5, 6), ncol = 3)  # Define position matrix
+  layout(layout_matrix,widths = c(3,3,3),
+         heights = c(1,1))
+  
+  for (jj in 1:length(linear_ass_prob)){
+    # FUNCTIONAL DATA CLUSTERING METHOD
+    plot(fdc_matrix[jj,],lwd=1.5,type="l",ylim=c(0,max(cc)),xlim=c(1,dim(cc)[2]),main=paste('Cluster',cluster_string[jj]),col='black',ylab='',xlab='')
+    
+    
+    # CONSENSUS CLUSTERING METHOD
+  plot(consensus_clustering_matrix[linear_ass_prob[jj],],lwd=1.5,type="l",ylim=c(0,max(cc)),xlim=c(1,dim(cc)[2]),main=paste('Cluster',cluster_string[jj]),col='red',ylab='',xlab='') 
+  }
+  
+
+```
+
+```{r}
+library(Matrix)
+
+#####  COMPUTE THE JACCARD INDEX TO SEE HOW SIMILAR THE CLUSTERINGS IN EACH PAIR REALLY ARE ######
+  cluster_string <- paste(letters[1:16])
+  cluster_string <- toupper(cluster_string)
+
+  # COMPUTE JACCARD SIMILARITY FOR EACH CLUSTER 
+  
+  # Function for computing Jaccard Similarity 
+jaccard_similarity <- function(A, B) { 
+  intersection = length(intersect(A, B)) 
+  union = length(A) + length(B) - intersection 
+  return (intersection/union) 
+} 
+  
+# OUR DATA
+fdc_indices_temp <- cluster_means(k=16,df.cld)
+fdc_indices <- fdc_indices_temp[[1]]
+consensus_clustering_indices_temp <- cluster_means(k=16,data_2[3,],use_kml=FALSE)
+consensus_clustering_indices<- consensus_clustering_indices_temp[[1]]
+
+# For each of the 16 clusters, compute the jaccard similarity
+cluster_nr <- 16
+jaccard_values <- matrix(0,cluster_nr,cluster_nr)
+
+for (i in 1:cluster_nr){
+  for (j in 1:cluster_nr){
+    jaccard_values[i,j] <- jaccard_similarity(fdc_indices[[i]],consensus_clustering_indices[[linear_ass_prob[[j]]]])
+  }
+}
+#
+# HEATMAP
+heatmap(jaccard_values)
+
+
+```
+```{r}
+jaccard_values
+```
+
+```{r}
+
+# BETWEENNESS
+
+# Our weights are correlations high means more similar), where as the geodesics need large weights to mean farther apart, so  we would use 1-edgeweights rather than edge weights directly
+
+nr_graphs <- length(As1)
+betweenness_measures <- matrix(0,dim(cc)[[1]],dim(cc)[[2]])
+
+for (i in 1:nr_graphs){
+  my_graph <- graph_from_adjacency_matrix(1-As1[[i]],weighted=TRUE)
+  betweenness_measures[,i] <- betweenness(my_graph,weights=E(my_graph)$weight)
+}
+
+# time series of betweeness score and time series of c graphs and color the top of both to see if they correspond. 
+
+
+# for each vertex, look at the max. betweenness scores - here we print the vertices.
+
+max_scores_vertices <- list()
+count <- 1
+
+for (i in 1:dim(cc)[[1]]){
+  if (max(betweenness_measures[i,])>50){
+    print(i)
+    max_scores_vertices[[count]] <- i
+    count <- count + 1
+  }
+}
+```
+
+```{r}
+# Plot these top vertices 'betweenness' scores and the trajectories
+par(mfrow = c(length(max_scores_vertices), 2))
+layout_matrix <- matrix(c(1, 2, 3, 4, 5, 6), ncol = 3)  # Define position matrix
+layout(layout_matrix,widths = c(3,3,3),
+         heights = c(1,1))
+  
+for (i in 1:length(max_scores_vertices)){
+  # Plot the neuron trajectory
+  plot(c[max_scores_vertices[[i]],],lwd=1.5,type="l",ylim=c(0,max(cc)),xlim=c(1,dim(cc)[2]),main=paste('Vertex number=',i,'trajectory'),col='red')
+  # Plot the betweenness scores
+  plot(betweenness_measures[max_scores_vertices[[i]],],lwd=1.5,type="l",ylim=c(0,max(betweenness_measures)),xlim=c(1,dim(cc)[2]),main=paste('Vertex number=',i,'betweenness'),col='blue')
+}
+```
+

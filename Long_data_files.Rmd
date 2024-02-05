@@ -1,0 +1,948 @@
+---
+title: "Long_data_files"
+output: html_document
+date: "2023-05-11"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+
+library(R.matlab)
+library(forecast)
+library("kml")
+library("dplyr")
+library(RColorBrewer)
+
+# tsoutliers
+# functional data analysis in r FDA MOCA
+# https://rpubs.com/stat17_hb/functional_data_clustering
+# https://cran.r-project.org/web/packages/fdaMocca/index.html
+# THIS ONE https://cran.r-project.org/web/packages/fdaMocca/fdaMocca.pdf
+
+```
+
+```{r}
+# LOAD DATA
+
+### --- FILE TYPE NR. 1 --- ###
+#### FILES BELOW: All files are 33 min. in length, with stimuli applied at 5, 12, 19, and 26* min.####
+
+#Mar<-readMat("C:/Users/speyman/Documents/Brain_data/new_data/Nov2122_1_peaks_only.mat")
+#Mar<-readMat("C:/Users/speyman/Documents/Brain_data/new_data/Dec055_1_peaks_only.mat")
+
+# THIS IS THE DEC WE ARE USING
+Mar<-readMat("C:/Users/speyman/Documents/Brain_data/new_data/Dec0922_1_peaks_only.mat")
+
+#  CONTROL is Jan1023
+#Mar<-readMat("C:/Users/speyman/Documents/Brain_data/new_data/Jan1023_1_peaks_only.mat")
+# Mar<-readMat("C:/Users/speyman/Documents/Brain_data/new_data/Jan1323_4_peaks_only.mat")
+
+### --- FILE TYPE NR. 2 --- ###
+### FILES BELOW: 47 minutes long, with stimuli applied at 5, 12, 19, 26, 33, and 40 minutes. ####
+#Mar <- readMat("C:/Users/speyman/Documents/Brain_data/new_data/May1723_1to2_peaks_only.mat")
+
+#### NEW FILES ###
+
+```
+
+
+
+
+
+
+```{r}
+# --------------------------------------------------------------------------
+#                                 <<< ASE >>>
+# --------------------------------------------------------------------------
+
+
+# ase: This function takes the following inputs:
+
+#   A: The adjacency matrix
+#   dim: The dimension of the block probability matrix
+
+# and returns the following:
+
+# X: The matrix of the embedding
+
+# D: A diagonal matrix of the singular values
+
+
+ase <- function(A, dim) {
+  require(irlba)
+ 
+  diag(A) <- rowSums(A) / (nrow(A)-1) # diagaug line
+  # page 65 of the survey?
+ 
+  if(nrow(A) >= 400){
+    A.svd <- irlba(A, nu = dim, nv = dim)
+    A.svd.values <- A.svd$d[1:dim]
+    A.svd.vectors <- A.svd$v[,1:dim,drop=F]
+    if(dim == 1)
+      A.coords <- sqrt(A.svd.values) * A.svd.vectors
+    else
+      A.coords <- A.svd.vectors %*% diag(sqrt(A.svd.values)) # X = U * sqrt(Sigma)xw
+  } else{
+    A.svd <- svd(A)
+    A.svd.values <- A.svd$d[1:dim]
+    if(dim == 1)
+      A.coords <- matrix(A.svd$v[,1,drop=F] * sqrt(A.svd$d[1]),ncol=dim)
+    else
+      A.coords <- A.svd$v[,1:dim] %*% diag(sqrt(A.svd$d[1:dim]))
+  }
+ 
+  return(list(X=A.coords,D=A.svd.values))
+}
+```
+
+```{r}
+
+# CLEAN UP DATA (FOR FILE TYPE NR. 1)
+
+# 33 min = 1980 seconds long files
+# 806144 points
+
+# time in increments of  0.002456137 (1980/806144)
+
+# 1. Create index of times.
+# Which times are !=0 print those elements once you know the indices.
+my_times = seq(from = 0, to = 1980, by = 0.00245613687)
+length(my_times)
+
+
+# 120/20000
+# let's say we have index 10 (for which) 10/*/36
+
+# if each 36 piece is 1 min (60 seconds). if there are 100,000 in each of those 36, then the last 
+
+# Do 36 graph - each of length 50 seconds. 
+# before 7 graphs.
+
+
+
+A<-Mar[[1]]   # dim(A) = [35918,2]
+A<-A[order(A[,2]),] # dim(A) = [35918,2]
+
+
+```
+
+```{r}
+2820/1148160
+```
+
+
+
+```{r}
+#22392
+my_times = seq(from = 0.00245614, to = 1980, by = 0.00245614)
+#my_times[1:5]
+#806143/36=22392.86
+806112-806143
+
+```
+
+
+
+
+```{r}
+# THIS PART TAKES A WHILE TO RUN (about an hour!  )
+
+start_time <- Sys.time()
+
+library(meaRtools)
+
+total_len <- dim(A)[2]
+b <- 36
+As <- list() # cutting time into 36 networks
+As1 <- list()
+tt <- dim(A)[1]
+
+
+
+# TIME
+
+#  1980/806143
+my_times = seq(from = 0.00245614, to = 1980, by = 0.00245614)
+length(my_times)
+
+temp_count <- 0
+for (kk in 1:b){
+  
+  # initialize matrices
+  As1[[kk]]<-matrix(0,tt,tt)
+
+  if (kk<b){ # index < 36
+    
+    # indices of temp matrix: 806143/36=22392.86
+    #806143/36=22392.86
+    #806112-806143=-31
+    ind1 <- temp_count + 1 
+    temp_count <- temp_count + 22392
+    ind2 <- temp_count 
+    As[[kk]] <- A[,ind1:ind2]
+    
+    
+
+  }
+  
+  else{ # last index = 36
+    
+    # indices of temp matrix
+    ind1 <- temp_count + 1
+    temp_count <- temp_count + 32 + 22392
+    ind2 <- temp_count    
+    As[[kk]] <- A[,ind1:ind2]
+    
+  }
+  
+  for (i in 1:tt){
+    for (j in 1:tt){
+      # Which indices in row i of the matrix have element = 1
+      s1_inds <- which(As[[kk]][i,] == 1)
+      s1 <- my_times[s1_inds]
+      # Which indices in row j of the matrix have element = 1
+      s2_inds <- which(As[[kk]][j,] == 1)
+      s2 <- my_times[s2_inds]
+      As1[[kk]][i,j]<-sttc(s1, s2, dt=0.05, rec_time = c(min(my_times),max(my_times)))
+      
+      # FIGURE OUT WHAT TO DO WITH NAAN VALUES
+      if (is.nan(As1[[kk]][i,j])){
+        As1[[kk]][i,j] <- 0
+      }
+            # change rec_time !!!
+    }
+
+  }
+  
+}
+
+
+actA<-rep(0,b)
+
+
+for(i in 1:b){actA[i]<-sum(!is.na(diag(As1[[i]])))} #only keep those rows/columns for which diagonal entries are non-nan?
+
+end_time <- Sys.time()
+
+print(end_time-start_time)
+
+
+```
+
+
+
+
+
+```{r}
+set.seed(123)
+#DCRDPG
+library(irlba)
+library(Matrix)
+epsi<-0.0001
+# Make each of the 36 matrices positive definite?
+O1<-As1
+for(i in 1:b){O1[[i]][is.na(O1[[i]])]<-0
+O1[[i]][O1[[i]]<0]<-0
+O1[[i]]<-O1[[i]]+epsi
+diag(O1[[i]])<-1
+}
+
+X <- list() # spectral embeddings for each of the 7 networks.
+
+
+# Number of vertices
+#s<-74
+s <- dim(A)[1]
+#tt
+ind <- list()
+
+# Embedding dimension
+
+d <- 5
+# eee<-irlba(O1[[1]],20)$d
+# plot(eee)
+
+#### CHANGE EMBEDDING DIMENSION #####
+
+
+for(i in 1:b){ # for each network, embed it.
+W<-irlba(O1[[i]],20)
+#plot(W$d) # plot embedding 
+X[[i]] <- matrix(0,s,d)#3 ?? 5 
+X[[i]]<-ase(O1[[i]],d)$X
+}
+#dev.off()
+#'Procrustes'
+# library(MCMCpack)
+# for(i in 2:b){
+#   R<-procrustes(X[[1]],X[[i]])
+#   X[[i]]<-X[[i]]%*%R$R
+# }
+
+par(mfrow=c(1,2))
+#
+# c <- matrix(0,tt,b-1)
+# for(i in 1:tt){
+#   for(j in 1:(b-1)){
+#     if(norm( X[[j]][i,],"2") < 0.0001 ){
+#       c[i,j] <- 0
+#     }else{
+#       c[i,j] <- norm(X[[j+1]][i,],"2")/norm(X[[j]][i,],"2")
+#     }
+#   }
+#   c[i,]<-c[i,]/norm(c[i,],"2")
+# }
+
+c <- matrix(0,tt,b)
+for(i in 1:tt){
+  for(j in 1:(b)){
+    if(norm( X[[1]][i,],"2") < 0.00000001 ){
+      c[i,j] <- 0
+    }else{
+      c[i,j] <- norm(X[[j]][i,],"2")/norm(X[[1]][i,],"2")
+    }
+  }
+  c[i,]<-c[i,]/norm(c[i,],"2")
+}
+
+
+# remove all rows with non-finite values
+c <- c[!rowSums(!is.finite(c)),]
+# replace all non-fini4e values with 0
+c[!is.finite(c)] <- 0
+
+'Overall sums'
+a <- rep(0,b-1)
+for(j in 1:(b-1)){
+  a[j] <- sum(c[,j])
+}
+
+
+```
+```{r}
+# saveRDS(c,file="cc_Jan1023_control")
+# saveRDS(As1,file="As1_Jan1023_control")
+# getwd()
+```
+
+```{r}
+ library(dplyr)
+set.seed(123)
+# Run the functional kmeans algorithm (WORK ON THIS SECTION!!)
+
+
+# RUN CLUSTERS 5 to 11 (so 7 clusters)
+indices_matrx <- c(1:dim(c)[1])
+matrix_with_index <- cbind(indices_matrx,c)
+df.cld <- kml::cld(as.data.frame(matrix_with_index), timeInData = 2:ncol(matrix_with_index), maxNA = 2)
+kml::kml(df.cld, nbClusters=5:11, nbRedrawing = 5)
+
+# Cluster matrix
+fdc_clusters <- matrix(0,7,dim(c)[1])
+
+for (i in 1:7){
+  # ith row of the matrix is the ith clustering - clusters go from 5 to 11
+  fdc_clusters[i,] = kml::getClusters(df.cld, i+4)
+}
+
+# save file
+save(fdc_clusters,file="fdc_clusters.Rdata")
+
+
+#load(file="fdc_clusters.Rdata")
+```
+```{r}
+saveRDS(As1,file="As1_Jan1023_control")
+saveRDS(c,file="cc_Jan1023_control")
+```
+
+```{r}
+set.seed(123)
+# PLOT THE MEANS OF EACH CLUSTER ( kclusters) ---------- FUNCTION ----------
+cluster_means <- function(k,input_data){
+
+Khat_k = kml::getClusters(input_data, k)
+# String of clusters - A, B, C, .... (k of them)
+cluster_string <- paste(letters[1:k])
+cluster_string <- toupper(cluster_string)
+print(cluster_string)
+
+# Plot parameters
+if (k <= 9) { 
+  par(mfrow = c(3, 3))
+}
+else {
+  par(mfrow=c(4,4))
+}
+
+layout_matrix <- matrix(c(1, 2, 3, 4, 5, 6), ncol = 3)  # Define position matrix
+layout(layout_matrix,widths = c(3,3,3),
+       heights = c(1,1))
+
+
+# Plot each cluster
+
+for (ii in 1:k){
+  print(paste('ii',ii))
+  # Cluster k
+  # Find index of vertices that are cluster 'k'
+  index_k <- which(Khat_k==cluster_string[ii])
+  cluster_k_data <- c[index_k,]
+
+  # 
+  if(is.null(dim(cluster_k_data))){
+    plot(cluster_k_data,lwd=1.5,type="l",ylim=c(0,max(c)),xlim=c(1,dim(c)[2]),main=paste('Cluster',cluster_string[ii],'(MEAN):', length(index_k), 'vertices'))
+  }
+  
+  else {
+    cluster_y <- colMeans(cluster_k_data)
+    plot(cluster_y,lwd=1.5,type="l",ylim=c(0,max(c)),xlim=c(1,dim(c)[2]),main=paste('Cluster',cluster_string[ii],'(MEAN):', length(index_k), 'vertices'))
+  }
+}
+
+}
+
+
+cluster_means(k=5,df.cld)
+
+```
+               
+
+               
+               
+```{r}
+# PLOT THE MEANS OF EACH CLUSTER (5 clusters)
+Khat5 = kml::getClusters(df.cld, 5)
+
+# Plot parameters
+par(mfrow = c(2, 3))
+layout_matrix <- matrix(c(1, 2, 3, 4, 5, 6), ncol = 3)  # Define position matrix
+layout(layout_matrix,widths = c(3,3,3),
+       heights = c(1,1))
+
+# cluster A
+index_A <- which(Khat5=='A')
+cluster_A_data <- c[index_A,]
+cluster_y <- colMeans(cluster_A_data)
+plot(cluster_y,lwd=1.5,type="l",col='red',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main=paste('cluster A (MEAN) (',length(index_A),'vertices)'))
+
+# Cluster B
+index_B <- which(Khat5=='B')
+cluster_B_data <- c[index_B,]
+cluster_y <- colMeans(cluster_B_data)
+plot(cluster_y,lwd=1.5,type="l",col='blue',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main=paste('cluster B (MEAN) (',length(index_B),'vertices)'))
+
+# Cluster C
+index_C <- which(Khat5=='C')
+cluster_C_data <- c[index_C,]
+cluster_y <- colMeans(cluster_C_data)
+plot(cluster_y,lwd=1.5,type="l",col='green',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main=paste('cluster C (MEAN) (',length(index_C),'vertices)'))
+
+# Cluster D
+index_D <- which(Khat5=='D')
+cluster_D_data <- c[index_D,]
+if(is.null(dim(cluster_D_data))){
+  plot(cluster_D_data,lwd=1.5,type="l",col='black',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main=paste('cluster D (MEAN) (',length(index_D),'vertices)'))
+} else 
+  {
+cluster_y <- colMeans(cluster_D_data)
+plot(cluster_y,lwd=1.5,type="l",col='black',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main=paste('cluster D (MEAN) (',length(index_D),'vertices)'))}
+
+
+# Cluster E
+index_E <- which(Khat5=='E')
+cluster_E_data <- c[index_E,]
+if(is.null(dim(cluster_E_data))){
+  plot(cluster_E_data,lwd=1.5,type="l",col='orange',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main=paste('cluster E (',length(index_D),'vertices)'))
+} else 
+  {
+cluster_y <- colMeans(cluster_E_data)
+plot(cluster_y,lwd=1.5,type="l",col='orange',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main=paste('cluster E (MEAN) (',length(index_E),'vertices)'))}
+```
+```{r}
+cluster_string
+
+```
+
+```{r}
+  #print(paste("cluster_string_i",cluster_string[i]))
+  # Find index of vertices that are cluster 'k'
+  index_k <- which(Khat_k=='cluster_string[4]')
+  #print(paste0("Which index_k",index_k))
+  #cluster_k_data <- c[index_k,]
+  #which(Khat_k=='d')
+  which(Khat_k=='D')
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+# 4 clusters
+
+Khat4 = kml::getClusters(df.cld, 4)
+
+if (Khat4[1]=='A') {
+  plot(c[1,],lwd=1.5,type="l",col='red',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main='4 clusters')
+} else if (Khat4[1]=='B') {
+    plot(c[1,],lwd=1.5,type="l",col='blue',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main='4 clusters')
+} else if (Khat4[1]=='C') {
+      plot(c[1,],lwd=1.5,type="l",col='green',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main='4 clusters')
+}  else if (Khat4[1]=='D') {
+      plot(c[1,],lwd=1.5,type="l",col='black',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main='4 clusters')
+}
+
+for (i in 2:length(Khat4))
+{
+  if (Khat4[i]=='A'){
+    lines(c[i,],lwd=1.5,type="l",col='red')
+  } else if (Khat4[i]=='B') {
+    lines(c[i,],lwd=1.5,type="l",col='blue')
+  } else if (Khat4[i]=='C'){
+        lines(c[i,],lwd=1.5,type="l",col='green')
+  } else if (Khat4[i]=='D'){
+        lines(c[i,],lwd=1.5,type="l",col='black')
+  }
+    
+}
+
+```
+```{r}
+# PLOT THE MEANS OF EACH CLUSTER (4 clusters)
+# Plot parameters
+par(mfrow = c(2, 2))
+layout_matrix <- matrix(c(1, 2, 3, 4, 5, 6), ncol = 3)  # Define position matrix
+layout(layout_matrix,widths = c(3,3,3),
+       heights = c(1,1))
+# Cluster A
+index_A <- which(Khat4=='A')
+cluster_A_data <- c[index_A,]
+cluster_y <- colMeans(cluster_A_data)
+plot(cluster_y,lwd=1.5,type="l",col='red',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main=paste('cluster A (MEAN) (',length(index_A),'vertices)'))
+
+# Cluster B
+index_B <- which(Khat4=='B')
+cluster_B_data <- c[index_B,]
+cluster_y <- colMeans(cluster_B_data)
+plot(cluster_y,lwd=1.5,type="l",col='blue',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main=paste('cluster B (MEAN) (',length(index_B),'vertices)'))
+
+# Cluster C
+index_C <- which(Khat4=='C')
+cluster_C_data <- c[index_C,]
+cluster_y <- colMeans(cluster_C_data)
+plot(cluster_y,lwd=1.5,type="l",col='green',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main=paste('cluster C (MEAN) (',length(index_C),'vertices)'))
+
+# Cluster D
+index_D <- which(Khat4=='D')
+cluster_D_data <- c[index_D,]
+if(is.null(dim(cluster_D_data))){
+  plot(cluster_D_data,lwd=1.5,type="l",col='black',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main=paste('cluster D (MEAN) (',length(index_D),'vertices)'))
+} else 
+  {
+cluster_y <- colMeans(cluster_D_data)
+plot(cluster_y,lwd=1.5,type="l",col='black',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main=paste('cluster D (MEAN) (',length(index_D),'vertices)'))}
+```
+
+
+### COPIED THE SAME THING AS ABOVE 
+
+```{r}
+ library(dplyr)
+set.seed(521)
+# Run the functional kmeans algorithm (WORK ON THIS SECTION!!)
+
+### ADD A SEED !!! ###
+
+# RUN CLUSTERS 5 to 11 (so 7 clusters)
+indices_matrx <- c(1:dim(c)[1])
+matrix_with_index <- cbind(indices_matrx,c)
+df.cld <- kml::cld(as.data.frame(matrix_with_index), timeInData = 2:ncol(matrix_with_index), maxNA = 2)
+kml::kml(df.cld, nbClusters=5:11, nbRedrawing = 5)
+
+# Cluster matrix
+fdc_clusters <- matrix(0,7,dim(c)[1])
+
+for (i in 1:7){
+  # ith row of the matrix is the ith clustering - clusters go from 5 to 11
+  fdc_clusters[i,] = kml::getClusters(df.cld, i+4)
+}
+
+# save file
+save(fdc_clusters,file="fdc_clusters.Rdata")
+
+
+#load(file="fdc_clusters.Rdata")
+```
+
+```{r}
+# 5 clusters
+
+Khat5 = kml::getClusters(df.cld, 5)
+
+if (Khat5[1]=='A') {
+  plot(c[1,],lwd=1.5,type="l",col='red',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main='5 clusters')
+} else if (Khat5[1]=='B') {
+    plot(c[1,],lwd=1.5,type="l",col='blue',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main='5 clusters')
+} else if (Khat5[1]=='C') {
+      plot(c[1,],lwd=1.5,type="l",col='green',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main='5 clusters')
+}  else if (Khat5[1]=='D') {
+      plot(c[1,],lwd=1.5,type="l",col='black',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main='5 clusters')
+}  else if (Khat5[1]=='E') {
+      plot(c[1,],lwd=1.5,type="l",col='orange
+           ',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main='5 clusters')
+}
+
+
+for (i in 2:length(Khat5))
+{
+  if (Khat4[i]=='A'){
+    lines(c[i,],lwd=1.5,type="l",col='red')
+  } else if (Khat5[i]=='B') {
+    lines(c[i,],lwd=1.5,type="l",col='blue')
+  } else if (Khat5[i]=='C'){
+        lines(c[i,],lwd=1.5,type="l",col='green')
+  } else if (Khat5[i]=='D'){
+        lines(c[i,],lwd=1.5,type="l",col='black')
+  } else if (Khat5[i]=='E'){
+        lines(c[i,],lwd=1.5,type="l",col='orange')
+  }
+    
+    
+}
+
+```
+
+```{r}
+# PLOT THE MEANS OF EACH CLUSTER (5 clusters)
+
+# Plot parameters
+par(mfrow = c(2, 3))
+layout_matrix <- matrix(c(1, 2, 3, 4, 5, 6), ncol = 3)  # Define position matrix
+layout(layout_matrix,widths = c(3,3,3),
+       heights = c(1,1))
+
+# cluster A
+index_A <- which(Khat5=='A')
+cluster_A_data <- c[index_A,]
+cluster_y <- colMeans(cluster_A_data)
+plot(cluster_y,lwd=1.5,type="l",col='red',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main=paste('cluster A (MEAN) (',length(index_A),'vertices)'))
+
+# Cluster B
+index_B <- which(Khat5=='B')
+cluster_B_data <- c[index_B,]
+cluster_y <- colMeans(cluster_B_data)
+plot(cluster_y,lwd=1.5,type="l",col='blue',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main=paste('cluster B (MEAN) (',length(index_B),'vertices)'))
+
+# Cluster C
+index_C <- which(Khat5=='C')
+cluster_C_data <- c[index_C,]
+cluster_y <- colMeans(cluster_C_data)
+plot(cluster_y,lwd=1.5,type="l",col='green',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main=paste('cluster C (MEAN) (',length(index_C),'vertices)'))
+
+# Cluster D
+index_D <- which(Khat5=='D')
+cluster_D_data <- c[index_D,]
+if(is.null(dim(cluster_D_data))){
+  plot(cluster_D_data,lwd=1.5,type="l",col='black',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main=paste('cluster D (MEAN) (',length(index_D),'vertices)'))
+} else 
+  {
+cluster_y <- colMeans(cluster_D_data)
+plot(cluster_y,lwd=1.5,type="l",col='black',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main=paste('cluster D (MEAN) (',length(index_D),'vertices)'))}
+
+
+# Cluster E
+index_E <- which(Khat5=='E')
+cluster_E_data <- c[index_E,]
+if(is.null(dim(cluster_E_data))){
+
+  plot(cluster_E_data,lwd=1.5,type="l",col='orange',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main=paste('cluster D (',length(index_D),'vertices)'))
+} else 
+  {
+cluster_y <- colMeans(cluster_D_data)
+plot(cluster_y,lwd=1.5,type="l",col='orange',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main=paste('cluster E (MEAN) (',length(index_E),'vertices)'))}
+```
+
+
+
+```{r}
+# Plot each cluster separately.
+index_A <- which(Khat4=='A')
+ plot(c[index_A[1],],lwd=1.5,type="b",col='red',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main=paste('cluster A (',length(index_A),'vertices)'))
+ for (i in 2:length(index_A)){
+        lines(c[index_A[i],],lwd=1.5,type="b",col='red')
+ }
+```
+
+```{r}
+# CLUSTER A (MEAN!)
+cluster_A_data <- c[index_A,]
+cluster_y <- colMeans(cluster_A_data)
+plot(cluster_y,lwd=1.5,type="b",col='red',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main=paste('cluster A (MEAN!) (',length(index_A),'vertices)'))
+```
+
+```{r}
+# Plot each cluster separately.
+index_B <- which(Khat4=='B')
+ plot(c[index_B[1],],lwd=1.5,type="b",col='blue',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main=paste('cluster B (',length(index_B),'vertices)'))
+ for (i in 2:length(index_B)){
+        lines(c[index_B[i],],lwd=1.5,type="b",col='blue')
+ }
+```
+```{r}
+# CLUSTER B (MEAN!)
+cluster_B_data <- c[index_B,]
+cluster_y <- colMeans(cluster_B_data)
+plot(cluster_y,lwd=1.5,type="b",col='blue',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main=paste('cluster B (MEAN!) (',length(index_B),'vertices)'))
+```
+
+```{r}
+# Plot each cluster separately.
+index_C <- which(Khat4=='C')
+ plot(c[index_C[1],],lwd=1.5,type="b",col='green',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main=paste('cluster C (',length(index_C),'vertices)'))
+ for (i in 2:length(index_C)){
+        lines(c[index_C[i],],lwd=1.5,type="b",col='green')
+ }
+```
+```{r}
+# CLUSTER C (MEAN!)
+cluster_C_data <- c[index_C,]
+cluster_y <- colMeans(cluster_C_data)
+plot(cluster_y,lwd=1.5,type="b",col='green',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main=paste('cluster C (MEAN!) (',length(index_C),'vertices)'))
+```
+
+```{r}
+# Plot each cluster separately.
+index_D <- which(Khat4=='D')
+ plot(c[index_D[1],],lwd=1.5,type="b",col='black',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main=paste('cluster D (',length(index_D),'vertices)'))
+ for (i in 2:length(index_D)){
+        lines(c[index_D[i],],lwd=1.5,type="b",col='black')
+ }
+```
+```{r}
+# CLUSTER D (MEAN!)
+cluster_D_data <- c[index_D,]
+cluster_y <- colMeans(cluster_D_data)
+plot(cluster_y,lwd=1.5,type="b",col='black',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main=paste('cluster D (MEAN!) (',length(index_D),'vertices)'))
+
+```
+
+```{r}
+print(paste("The four elements in cluster D are",index_D))
+```
+
+```{r}
+
+```
+
+
+```{r}
+# 5 clusters
+
+Khat5 = kml::getClusters(df.cld, 5)
+
+if (Khat5[1]=='A') {
+  plot(c[1,],lwd=1.5,type="b",col='red',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main='5 clusters')
+} else if (Khat5[1]=='B') {
+    plot(c[1,],lwd=1.5,type="b",col='blue',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main='5 clusters')
+} else if (Khat5[1]=='C') {
+      plot(c[1,],lwd=1.5,type="b",col='green',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main='5 clusters')
+}  else if (Khat5[1]=='D') {
+      plot(c[1,],lwd=1.5,type="b",col='black',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main='5 clusters')
+}  else if (Khat5[1]=='E') {
+      plot(c[1,],lwd=1.5,type="b",col='orange
+           ',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main='5 clusters')
+}
+
+
+for (i in 2:length(Khat5))
+{
+  if (Khat4[i]=='A'){
+    lines(c[i,],lwd=1.5,type="b",col='red')
+  } else if (Khat5[i]=='B') {
+    lines(c[i,],lwd=1.5,type="b",col='blue')
+  } else if (Khat5[i]=='C'){
+        lines(c[i,],lwd=1.5,type="b",col='green')
+  } else if (Khat5[i]=='D'){
+        lines(c[i,],lwd=1.5,type="b",col='black')
+  } else if (Khat5[i]=='E'){
+        lines(c[i,],lwd=1.5,type="b",col='orange')
+  }
+    
+    
+}
+
+```
+
+
+```{r}
+# Plot each cluster separately.
+index_A <- which(Khat5=='A')
+ plot(c[index_A[1],],lwd=1.5,type="b",col='red',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main=paste('cluster A (',length(index_A),'vertices)'))
+ for (i in 2:length(index_A)){
+        lines(c[index_A[i],],lwd=1.5,type="b",col='red')
+ }
+```
+```{r}
+# CLUSTER A (MEAN!)
+cluster_A_data <- c[index_A,]
+cluster_y <- colMeans(cluster_A_data)
+plot(cluster_y,lwd=1.5,type="b",col='red',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main=paste('cluster A (MEAN!) (',length(index_A),'vertices)'))
+```
+
+```{r}
+# Plot each cluster separately.
+index_B <- which(Khat5=='B')
+ plot(c[index_B[1],],lwd=1.5,type="b",col='blue',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main=paste('cluster B (',length(index_B),'vertices)'))
+ for (i in 2:length(index_B)){
+        lines(c[index_B[i],],lwd=1.5,type="b",col='blue')
+ }
+```
+```{r}
+# CLUSTER B (MEAN!)
+cluster_B_data <- c[index_B,]
+cluster_y <- colMeans(cluster_B_data)
+plot(cluster_y,lwd=1.5,type="b",col='blue',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main=paste('cluster B (MEAN!) (',length(index_B),'vertices)'))
+```
+
+```{r}
+# Plot each cluster separately.
+index_C <- which(Khat5=='C')
+ plot(c[index_C[1],],lwd=1.5,type="b",col='green',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main=paste('cluster C (',length(index_C),'vertices)'))
+ for (i in 2:length(index_C)){
+        lines(c[index_C[i],],lwd=1.5,type="b",col='green')
+ }
+```
+```{r}
+# CLUSTER C (MEAN!)
+cluster_C_data <- c[index_C,]
+cluster_y <- colMeans(cluster_C_data)
+plot(cluster_y,lwd=1.5,type="b",col='green',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main=paste('cluster C (MEAN!) (',length(index_C),'vertices)'))
+```
+
+```{r}
+# Plot each cluster separately.
+index_D <- which(Khat5=='D')
+ plot(c[index_D[1],],lwd=1.5,type="b",col='black',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main=paste('cluster D (',length(index_D),'vertices)'))
+ for (i in 2:length(index_D)){
+        lines(c[index_D[i],],lwd=1.5,type="b",col='black')
+ }
+```
+```{r}
+# CLUSTER D (MEAN!)
+cluster_D_data <- c[index_D,]
+cluster_y <- colMeans(cluster_D_data)
+plot(cluster_y,lwd=1.5,type="b",col='black',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main=paste('cluster D (MEAN!) (',length(index_D),'vertices)'))
+
+```
+
+```{r}
+# Plot each cluster separately.
+index_E <- which(Khat5=='E')
+ plot(c[index_E[1],],lwd=1.5,type="b",col='orange',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main=paste('cluster E (',length(index_E),'vertices)'))
+ for (i in 2:length(index_E)){
+        lines(c[index_E[i],],lwd=1.5,type="b",col='orange')
+ }
+```
+```{r}
+index_D
+```
+```{r}
+# CLUSTER D (MEAN!)
+cluster_E_data <- c[index_E,]
+cluster_y <- colMeans(cluster_E_data)
+plot(cluster_y,lwd=1.5,type="b",col='orange',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main=paste('cluster E (MEAN!) (',length(index_E),'vertices)'))
+
+```
+```{r}
+# FUNCTIONAL CLUSTERING
+
+# df.K3 is a n x (d+1) data where the column 1 contains row index from 1:n.
+df.cld <- kml::cld(as.data.frame(matrix_with_index), timeInData = 2:ncol(matrix_with_index), maxNA = 2)
+kml::kml(df.cld, nbClusters=2:9, nbRedrawing = 5)
+
+# store clustering results for K=2:5, where KhatK = getClustesr() extracts Yhat for K.
+#matrix_with_index <- matrix_with_index %>% mutate(Khat2 = kml::getClusters(df.cld, 2),
+#                          Khat3 = kml::getClusters(df.cld, 3),
+#                          Khat4 = kml::getClusters(df.cld, 4),
+#                          Khat5 = kml::getClusters(df.cld, 5))
+Khat2 = kml::getClusters(df.cld, 2)
+
+# 2 clusters
+if (Khat2[1]=='A') {
+  plot(c[1,],lwd=1.5,type="b",col='red',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main='2 clusters')
+} else {
+    plot(c[1,],lwd=1.5,type="b",col='blue',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main='2 clusters')
+}
+
+for (i in 2:length(Khat2))
+{
+  if (Khat2[i]=='A'){
+    lines(c[i,],lwd=1.5,type="b",col='red')
+  } else {
+    lines(c[i,],lwd=1.5,type="b",col='blue')
+  }
+  
+}
+
+
+```
+```{r}
+# 3 clusters
+
+Khat3 = kml::getClusters(df.cld, 3)
+
+if (Khat3[1]=='A') {
+  plot(c[1,],lwd=1.5,type="b",col='red',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main='3 clusters')
+} else if (Khat3[1]=='B') {
+    plot(c[1,],lwd=1.5,type="b",col='blue',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main='3 clusters')
+} else if (Khat3[1]=='C') {
+      plot(c[1,],lwd=1.5,type="b",col='green',ylim = c(0,max(c)), xlim = c(1,dim(c)[2]),main='3 clusters')
+}
+
+for (i in 2:length(Khat3))
+{
+  if (Khat3[i]=='A'){
+    lines(c[i,],lwd=1.5,type="b",col='red')
+  } else if (Khat3[i]=='B') {
+    lines(c[i,],lwd=1.5,type="b",col='blue')
+  } else if (Khat3[i]=='C'){
+        lines(c[i,],lwd=1.5,type="b",col='green')
+
+  }
+    
+}
+
+```
